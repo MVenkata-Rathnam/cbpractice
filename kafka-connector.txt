@@ -1,0 +1,25 @@
+1. For each document update, a new record is created in kafka topic.
+2. Adding a header for each update message.  This functionality is not available in connector.  But can be implemented using Single Message Transform (SMT) feature of Kafka.
+3. Connector has no way of knowing which field has changed.
+   It will give the entire document.
+   To know the field of change, the only way is to compare the new version with the stored previous version.
+4. kafka-connect-couchbase.jar and all the other proprietory jars should be kep in the same directory and should be mentioned in the PLUGIN_PATH environment variable.
+5. Need to check how the connector works on restart.
+6. The filter class can be mentioned in the event.filter.class property of connector.
+   The 'pass' method in filter is called for any DCP event.
+   So, we can do any operation like adding or modifying a field here.
+
+   **But need to look on how filter parallelism works.
+   **Need to check on how persistent polling works.
+   **Need to check what are all the potential memory leak points.
+       1.  When we set BEGINNING or SAVED_OFFSET_OR_BEGINNING flag to true and also set use_snapshots flag to TRUE, there is a possibility of memory leak since it loads all the updates from beginning in one shot.
+
+7. We can create our own SourceHandler by extending RawJsonSourceHandler to customize the message published to kafka topic.
+   The SourceHandler can also be used to define the schema of our interest.
+   By default, the entire document is put in a single byte array.
+   
+8. Kafka connect framework stores a bookmark of whatever the couchbase changes have been published to kafka till now.
+   The file name is mentioned in the property offset.storage.file.filename (default to /tmp/connect.offsets)
+   
+9. bySeqNo is the sequence number which uniquely identifies a change to a document in a vBucket.
+   **https://blog.couchbase.com/couchbase-dcp-rollback-qa-tests/ - Good Description of DCP Rollback on Failover scenario

@@ -1,0 +1,127 @@
+-> Mutation: MutationMessage [key: "1", vbid: 988, cas: 1586604991030362112, bySeqno: 3347, revSeqno: 3347, flags: 33554432, expiry: 0, lockTime: 0, clength: 30]
+-> DCP Client provides a high level api to register a listener that performs blocking operations and automatic flow control
+-> Not able to find seedNodes method
+-> The client object has three data handlers with onEvent callback:  ControlEventHandler, DataEventHandler and SystemEventHandler
+-> The number of partitions that a bucket has can be determined by calling client.numPartitions().
+-> The number of partitions is also equal to the number of unique vbucket IDs that we receive in the Mutation event.
+-> Streaming can be resumed from an offset (resumeStreaming and recoverOrInitializeState) where the offset management is manual.
+-> Flow Control has two modes - AUTOMATIC and MANUAL
+-> MANUAL - In this mode, after processing the Mutation and Deletion messages, acknowledgement has to be manually given by calling DocumentChange.flowControlAck()
+-> AUTOMATIC - In this mode, the acknowledge will be automatically given even before the events are thrown to DatahaseChangeListener
+
+-> {@link RollbackMessage}: If during a connect phase the server responds with rollback
+     * information, this event is forwarded to the callback. Does not need to be acknowledged.
+	 
+-> - {@link DcpSnapshotMarkerRequest}: Server transmits data in batches called snapshots
+     * before sending anything, it send marker message, which contains start and end sequence
+     * numbers of the data in it. Need to be acknowledged.
+	 
+-> DcpFailoverLogResponse is also a control event thrown on failover.  The failover logs are written in the session state.
+
+- {@link DcpMutationMessage}: A mtation has occurred. Needs to be acknowledged.
+     * - {@link DcpDeletionMessage}: A deletion has occurred. Needs to be acknowledged.
+     * - {@link DcpExpirationMessage}: An expiration has occurred. Note that current server versions
+     * (as of 4.5.0) are not emitting this event, but in any case you should at least release it to
+     * be forwards compatible. Needs to be acknowledged.
+	 
+	 
+-> Flow control can be set either using flowControl directly or by setting CONNECTION_BUFFER_SIZE value in ControlParams
+-> bufferAckWatermark is set with a percentage value in integer.  For e.g if set to 75, then after reaching 75% of buffer size, acknowledge has to be sent to server for further updates
+-> rollbackAndRestartStream method of the client object can be called when a RollbackMessage is received in ControlEventHandler.
+-> Collections in the bucket is one way by which we can filter to events.  If we want to listen to events on only certain type of documents, we can group them into a collection and create a DCP stream for that collection alone.  (***Read in an article, but cannot see such option in Client or ClientEnvironment)
+
+
+SCENARIOS TO BE CHECKED
+-------------------------
+1. Check if you are getting latest update - YES, able to get the latest update
+
+2. Check if you are getting all the updates when updates are done with 2 sec interval - YES, able to get all the updates
+
+3. Check if all the dcp client instances are receiving all the updates identically - YES, all the instances are getting same updates
+
+4. Check the behaviour of the client after it is restarted
+	a. When no updates happened during the down-time.
+	b. When updates happended during the down-time.
+			i. For both the cases, the behavior is same.  If client is initialized from now, no updates occur.  If the client is initialized from beginning, a snapshot event is received followed by the latest mutation.
+5. Follow the step 4 to test the behaviour of the client but with session management.
+	i. While choosing resumeStreaming by reading the offset maintained for each partition from a file, it is streaming from the offset written for that partition.
+
+6. Validate the different cases with Session state restore during client startup
+
+	{"flog":[{"seqno":3447,"uuid":261706182671224},{"seqno":3237,"uuid":2144978222571},{"seqno":3237,"uuid":188974461284403},{"seqno":3237,"uuid":26031614342803},{"seqno":3237,"uuid":189441132171085},{"seqno":3237,"uuid":134597807868381},{"seqno":3237,"uuid":200853386983222},{"seqno":3237,"uuid":280830504211512},{"seqno":3237,"uuid":35339402137243},{"seqno":3237,"uuid":168346768312352},{"seqno":3237,"uuid":107800720523846},{"seqno":3237,"uuid":249456620974459},{"seqno":3237,"uuid":23609143938941},{"seqno":3237,"uuid":236410730182872},{"seqno":3237,"uuid":233058230621455},{"seqno":3237,"uuid":226730487693786},{"seqno":3237,"uuid":41233049172618},{"seqno":3237,"uuid":257994161983197},{"seqno":3237,"uuid":102063439367478},{"seqno":3237,"uuid":175047098112523},{"seqno":3237,"uuid":186618567174682},{"seqno":1237,"uuid":76748929828454},{"seqno":1187,"uuid":107772909354728},{"seqno":1187,"uuid":15238433170302},{"seqno":0,"uuid":38735086746308}],"ss":4212,"es":-1,"ses":4212,"sss":3972}
+	
+	a. StartSeqNo > latestSeqNo
+		ss: 4215 (when startsequence number is greater than the available seq no, an exception is thrown)
+		Exception in thread "main" java.lang.IllegalStateException: Unhandled Status: 0x0022 (The requested value is outside the legal ranges)
+	at com.couchbase.client.dcp.conductor.DcpChannel$5$1.operationComplete(DcpChannel.java:424)
+	at com.couchbase.client.deps.io.netty.util.concurrent.DefaultPromise.notifyListener0(DefaultPromise.java:512)
+	at com.couchbase.client.deps.io.netty.util.concurrent.DefaultPromise.notifyListeners0(DefaultPromise.java:505)
+	at com.couchbase.client.deps.io.netty.util.concurrent.DefaultPromise.notifyListenersNow(DefaultPromise.java:484)
+	at com.couchbase.client.deps.io.netty.util.concurrent.DefaultPromise.notifyListeners(DefaultPromise.java:425)
+	at com.couchbase.client.deps.io.netty.util.concurrent.DefaultPromise.setSuccess(DefaultPromise.java:95)
+	at com.couchbase.client.dcp.transport.netty.DcpMessageHandler.channelRead(DcpMessageHandler.java:336)
+	at com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:356)
+	at com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:342)
+	at com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:335)
+	at com.couchbase.client.deps.io.netty.handler.codec.ByteToMessageDecoder.fireChannelRead(ByteToMessageDecoder.java:312)
+	at com.couchbase.client.deps.io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:286)
+	at com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:356)
+	at com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:342)
+	at com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:335)
+	at com.couchbase.client.deps.io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1304)
+	at com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:356)
+	at com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:342)
+	at com.couchbase.client.deps.io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:921)
+	at com.couchbase.client.deps.io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:135)
+	at com.couchbase.client.deps.io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:646)
+	at com.couchbase.client.deps.io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:581)
+	at com.couchbase.client.deps.io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:498)
+	at com.couchbase.client.deps.io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:460)
+	at com.couchbase.client.deps.io.netty.util.concurrent.SingleThreadEventExecutor$2.run(SingleThreadEventExecutor.java:131)
+	at com.couchbase.client.deps.io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(Thread.java:748)
+	
+	b. when endSnapSeqNo > latestSeqNo
+		Rollback control event is thrown
+		
+	c. when startsnapseqno > latestSeqNo
+		Exception is thrown.
+	
+	d. startSeqNo < startsnapseqno
+	    Exception is thrown.
+	   
+	e. startSeqNo > startsnapseqno
+	    The snapshot is received and offsets are properly updated.
+	   
+	f. startSeqNo > endSnapSeqNo
+	    Exception is thrown
+
+7. Check the working of both flow control modes (MANUAL & AUTOMATIC)
+   -> On Automatic mode, working without any issues.  On manual mode, need to understand how the buffer is filled.  
+      Setting the buffer size of 500 bytes, and buffer watermark to 75%, not able to get more than 4 updates without acknowledging where each update's size is around 30 bytes.  Need to check when and all the snapshotMarketRequest event is thrown (IN THIS CASE, IT WAS THROWN FOR EACH MUTATION)
+
+8. Check whether rollback event is thrown in ControlEventHandler and if the rollback happens properly.
+   https://github.com/couchbase/kv_engine/blob/master/docs/dcp/documentation/rollback.md
+   Able to get Rollback Event notification in control event handler.  Need to check on how rollback will take place during different scenarios.
+
+9. Check whether dead connection is detected at the client with corresponding event
+   -> Getting exception - java.io.IOException: An existing connection was forcibly closed by the remote host.  Even after enabling Noop and setting noop interval, the same exception is thrown.
+	   Apr 14, 2020 2:14:28 PM com.couchbase.client.deps.io.netty.channel.AbstractChannelHandlerContext invokeExceptionCaught
+	WARNING: An exception 'java.lang.IllegalStateException: complete already: DefaultChannelPromise@10faff03(failure: java.io.IOException: An existing connection was forcibly closed by the remote host)' [enable DEBUG level for full stacktrace] was thrown by a user handler's exceptionCaught() method while handling the following exception:
+	java.io.IOException: An existing connection was forcibly closed by the remote host
+		at sun.nio.ch.SocketDispatcher.read0(Native Method)
+		at sun.nio.ch.SocketDispatcher.read(SocketDispatcher.java:43)
+		at sun.nio.ch.IOUtil.readIntoNativeBuffer(IOUtil.java:223)
+		at sun.nio.ch.IOUtil.read(IOUtil.java:192)
+		at sun.nio.ch.SocketChannelImpl.read(SocketChannelImpl.java:380)
+		at com.couchbase.client.deps.io.netty.buffer.PooledUnsafeDirectByteBuf.setBytes(PooledUnsafeDirectByteBuf.java:221)
+		at com.couchbase.client.deps.io.netty.buffer.AbstractByteBuf.writeBytes(AbstractByteBuf.java:892)
+		at com.couchbase.client.deps.io.netty.channel.socket.nio.NioSocketChannel.doReadBytes(NioSocketChannel.java:243)
+		at com.couchbase.client.deps.io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:119)
+		at com.couchbase.client.deps.io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:646)
+		at com.couchbase.client.deps.io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:581)
+		at com.couchbase.client.deps.io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:498)
+		at com.couchbase.client.deps.io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:460)
+		at com.couchbase.client.deps.io.netty.util.concurrent.SingleThreadEventExecutor$2.run(SingleThreadEventExecutor.java:131)
+		at com.couchbase.client.deps.io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+		at java.lang.Thread.run(Thread.java:748)
